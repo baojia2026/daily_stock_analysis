@@ -32,7 +32,8 @@ tavily-python>=0.3.3
 serpapi>=0.1.5
 newspaper3k>=0.2.8
 beautifulsoup4>=4.12.3
-lxml>=5.1.0
+lxml==4.9.3  # 固定到兼容版本
+lxml_html_clean==0.1.0  # 添加这个修复包
 
 # =========================
 # 数据处理
