@@ -2,7 +2,7 @@
 # main.py  【最终稳定版】
 # =========================
 
-# 1️⃣ 强制加载 .env（这是你之前一直没生效的根因）
+# 1️⃣ 加载 .env（本地开发用，GitHub Actions 下不会生效但不影响）
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,9 +19,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 3️⃣ 打印关键环境变量状态（不打印值，只打印是否存在）
-logger.info("环境变量检查：")
-logger.info(f"DEEPSEEK_API_KEY 是否存在：{'是' if os.getenv('DEEPSEEK_API_KEY') else '否'}")
+logger.info("========== 环境变量检查 ==========")
+logger.info(f"OPENAI_API_KEY 是否存在：{'是' if os.getenv('OPENAI_API_KEY') else '否'}")
 logger.info(f"TUSHARE_TOKEN 是否存在：{'是' if os.getenv('TUSHARE_TOKEN') else '否'}")
+logger.info("===================================")
 
 # 4️⃣ 引入项目核心 Pipeline（⚠️ 注意：是 src，不是 scripts）
 try:
@@ -37,7 +38,7 @@ def main():
     # 5️⃣ 初始化分析管线
     pipeline = StockAnalysisPipeline()
 
-    # 6️⃣ 你当前测试用的股票（后续你可以换成全市场）
+    # 6️⃣ 当前测试股票（后续你可以换成自选股 / 全市场）
     stock_list = ["000001"]
 
     results = []
@@ -52,9 +53,9 @@ def main():
 
     logger.info("========== 分析完成 ==========")
 
-    # 7️⃣ 简要输出结果（保证你能“看到东西”）
+    # 7️⃣ 简要输出结果（确保日志里能看到）
     for r in results:
-        logger.info(f"结果：{r}")
+        logger.info(f"分析结果：{r}")
 
     logger.info("程序执行结束")
 
