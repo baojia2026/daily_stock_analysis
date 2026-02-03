@@ -1,136 +1,160 @@
-name: 每日股票分析
-
-on:
-  # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
-  schedule:
-    - cron: '0 10 * * 1-5'
-  
-  # 手动触发
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: '运行模式'
-        required: true
-        default: 'full'
-        type: choice
-        options:
-          - full
-          - market-only
-          - stocks-only
-
-concurrency:
-  group: stock-analysis
-  cancel-in-progress: false
-
-jobs:
-  analyze:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-      
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
       - name: 安装依赖
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: 修复 newspaper 导入问题
+        run: |
+          # 创建修复脚本
+          cat > fix_newspaper.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          修复 newspaper3k 导入问题的脚本
+          """
+          
+          import os
+          import sys
+          import shutil
+          import traceback
+          
+          def fix_parsers_file():
+              """修复 parsers.py 文件"""
+              try:
+                  import site
+                  
+                  # 查找所有可能的 site-packages 路径
+                  site_paths = site.getsitepackages()
+                  if hasattr(site, 'getsitepackages'):
+                      site_paths = site.getsitepackages()
+                  else:
+                      site_paths = [site.PREFIXES[0] + '/lib/python' + sys.version[:3] + '/site-packages']
+                  
+                  # 添加可能的路径
+                  site_paths.append('/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages')
+                  site_paths.append('/usr/local/lib/python3.11/site-packages')
+                  
+                  parsers_found = []
+                  
+                  for site_path in site_paths:
+                      # 尝试多个可能的路径
+                      possible_paths = [
+                          os.path.join(site_path, 'newspaper', 'parsers.py'),
+                          os.path.join(site_path, 'newspaper3k', 'newspaper', 'parsers.py'),
+                      ]
+                      
+                      for parsers_path in possible_paths:
+                          if os.path.exists(parsers_path):
+                              parsers_found.append(parsers_path)
+                  
+                  if not parsers_found:
+                      print("未找到 parsers.py 文件")
+                      return False
+                  
+                  for parsers_path in parsers_found:
+                      print(f"找到 parsers.py: {parsers_path}")
+                      
+                      # 备份原文件
+                      backup_path = parsers_path + '.bak'
+                      shutil.copy2(parsers_path, backup_path)
+                      print(f"已创建备份: {backup_path}")
+                      
+                      # 读取文件内容
+                      with open(parsers_path, 'r', encoding='utf-8') as f:
+                          content = f.read()
+                      
+                      # 替换有问题的导入
+                      if 'import xml.html' in content:
+                          # 替换为修复后的导入
+                          new_content = content.replace(
+                              'import xml.html',
+                              '''# 修复 lxml.html.clean 导入问题
+          try:
+              from lxml_html_clean import clean
+              from lxml import html as lxml_html
+              import lxml.html
+          except ImportError:
+              from lxml.html.clean import clean
+              from lxml import html as lxml_html
+              import lxml.html'''
+                          )
+                          
+                          # 写回文件
+                          with open(parsers_path, 'w', encoding='utf-8') as f:
+                              f.write(new_content)
+                          
+                          print(f"已修复: {parsers_path}")
+                          return True
+                      else:
+                          print(f"无需修复: {parsers_path} (未找到 'import xml.html')")
+                  
+                  return False
+                  
+              except Exception as e:
+                  print(f"修复过程中出错: {e}")
+                  traceback.print_exc()
+                  return False
+          
+          def apply_monkey_patch():
+              """应用猴子补丁作为备用方案"""
+              print("应用猴子补丁...")
+              
+              patch_code = '''
+          import sys
+          import types
+          
+          # 创建假的 xml.html 模块
+          class FakeXmlHtmlModule:
+              def __init__(self):
+                  self.__name__ = 'xml.html'
+                  self.clean = None
+              
+              def __getattr__(self, name):
+                  # 延迟导入
+                  if name == 'clean':
+                      try:
+                          from lxml_html_clean import clean
+                          return clean
+                      except ImportError:
+                          from lxml.html.clean import clean
+                          return clean
+                  raise AttributeError(f"module 'xml.html' has no attribute '{name}'")
+          
+          # 创建模块实例
+          fake_module = FakeXmlHtmlModule()
+          
+          # 插入到 sys.modules
+          sys.modules['xml.html'] = fake_module
+          
+          print("猴子补丁已应用")
+          '''
+              
+              # 执行补丁
+              exec(patch_code, globals())
+              return True
+          
+          if __name__ == '__main__':
+              print("开始修复 newspaper3k 库导入问题...")
+              
+              # 先尝试修复文件
+              if fix_parsers_file():
+                  print("文件修复成功")
+              else:
+                  print("文件修复失败，尝试应用猴子补丁")
+                  apply_monkey_patch()
+              
+              # 测试导入
+              try:
+                  from newspaper import Article, Config
+                  print("✅ newspaper 导入测试成功")
+                  sys.exit(0)
+              except Exception as e:
+                  print(f"❌ newspaper 导入测试失败: {e}")
+                  sys.exit(1)
+          EOF
+          
+          # 运行修复脚本
+          python fix_newspaper.py
+      
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports
-      
-      - name: 执行股票分析（DeepSeek）
-        env:
-          # ==========================================
-          # AI 配置（DeepSeek - OpenAI 兼容接口）
-          # ==========================================
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: https://api.deepseek.com
-          OPENAI_MODEL: deepseek-chat
-
-          # ==========================================
-          # Gemini（可选，不配置就不会用）
-          # ==========================================
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
-          GEMINI_MODEL_FALLBACK: gemini-2.0-flash
-          GEMINI_REQUEST_DELAY: '3.0'
-          
-          # ==========================================
-          # 数据源
-          # ==========================================
-          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-          
-          # ==========================================
-          # 搜索服务
-          # ==========================================
-          BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
-          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
-          SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
-          
-          # ==========================================
-          # 通知渠道
-          # ==========================================
-          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
-          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          ASTRBOT_URL: ${{ secrets.ASTRBOT_URL }}
-          ASTRBOT_TOKEN: ${{ secrets.ASTRBOT_TOKEN }}
-
-          # ==========================================
-          # 自选股 & 运行配置
-          # ==========================================
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
-          REPORT_TYPE: simple
-          MARKET_REVIEW_ENABLED: 'true'
-          LOG_LEVEL: INFO
-          MAX_WORKERS: '1'
-          ENABLE_CHIP_DISTRIBUTION: 'false'
-          REALTIME_SOURCE_PRIORITY: tencent,akshare_sina,efinance,akshare_em
-          
-        run: |
-          MODE="${{ github.event.inputs.mode || 'full' }}"
-
-          echo "=========================================="
-          echo "🚀 A股自选股智能分析系统（DeepSeek）"
-          echo "=========================================="
-          echo "⏰ 时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "🎯 运行模式: $MODE"
-          echo "📊 自选股: $STOCK_LIST"
-          echo ""
-          echo "=========================================="
-          echo "📋 配置检查"
-          echo "=========================================="
-          echo "【AI 配置】"
-          echo "  OpenAI / DeepSeek API Key: $([ -n "$OPENAI_API_KEY" ] && echo '✅ 已配置' || echo '❌ 未配置')"
-          echo "  OpenAI Base URL: $OPENAI_BASE_URL"
-          echo "  OpenAI Model: $OPENAI_MODEL"
-          echo ""
-
-          if [ "$MODE" = "market-only" ]; then
-            python main.py --market-review
-          elif [ "$MODE" = "stocks-only" ]; then
-            python main.py --no-market-review
-          else
-            python main.py
-          fi
-      
-      - name: 上传分析报告
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: analysis-reports-${{ github.run_number }}
-          path: |
-            reports/
-            logs/
-          retention-days: 30
