@@ -20,39 +20,112 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from itertools import cycle
 import requests
-from newspaper import Article, Config
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 
 def fetch_url_content(url: str, timeout: int = 5) -> str:
     """
-    获取 URL 网页正文内容 (使用 newspaper3k)
+    获取 URL 网页正文内容 (使用 requests + BeautifulSoup 替代 newspaper3k)
     """
     try:
-        # 配置 newspaper3k
-        config = Config()
-        config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        config.request_timeout = timeout
-        config.fetch_images = False  # 不下载图片
-        config.memoize_articles = False # 不缓存
-
-        article = Article(url, config=config, language='zh') # 默认中文，但也支持其他
-        article.download()
-        article.parse()
-
-        # 获取正文
-        text = article.text.strip()
-
-        # 简单的后处理，去除空行
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        text = '\n'.join(lines)
-
-        return text[:1500]  # 限制返回长度（比 bs4 稍微多一点，因为 newspaper 解析更干净）
+        import re
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.encoding = response.apparent_encoding or 'utf-8'
+        response.raise_for_status()
+        
+        # 解析 HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 移除不需要的标签
+        for element in soup(['script', 'style', 'iframe', 'nav', 'header', 'footer', 'aside', 'form', 'button']):
+            element.decompose()
+        
+        # 移除注释
+        for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+            comment.extract()
+        
+        # 尝试多种方法提取正文
+        
+        # 方法1：查找常见的正文容器
+        body_selectors = [
+            'article', '.article-content', '.content', '.main-content',
+            '.post-content', '.entry-content', '.news_content',
+            '.article-body', '.article-text', '.news-detail',
+            '#content', '#article', '#news_content', '#news_detail',
+            'div[class*="content"]', 'div[class*="article"]', 'div[class*="news"]',
+            'div[class*="post"]', 'div[class*="entry"]',
+        ]
+        
+        content_element = None
+        for selector in body_selectors:
+            if selector.startswith(('div[', '[')):
+                # 属性选择器
+                if selector == 'div[class*="content"]':
+                    content_element = soup.find('div', class_=re.compile(r'content', re.I))
+                elif selector == 'div[class*="article"]':
+                    content_element = soup.find('div', class_=re.compile(r'article', re.I))
+                elif selector == 'div[class*="news"]':
+                    content_element = soup.find('div', class_=re.compile(r'news', re.I))
+                elif selector == 'div[class*="post"]':
+                    content_element = soup.find('div', class_=re.compile(r'post', re.I))
+                elif selector == 'div[class*="entry"]':
+                    content_element = soup.find('div', class_=re.compile(r'entry', re.I))
+            else:
+                # CSS选择器
+                content_element = soup.select_one(selector)
+            
+            if content_element and len(content_element.get_text(strip=True)) > 100:
+                break
+        
+        # 方法2：如果没有找到，使用body或整个页面
+        if not content_element or len(content_element.get_text(strip=True)) < 100:
+            content_element = soup.find('body') or soup
+        
+        # 获取文本
+        text = content_element.get_text(separator='\n', strip=True)
+        
+        # 清理文本
+        lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            if line and len(line) > 10:  # 过滤过短的行
+                # 过滤广告、版权等
+                if not any(keyword in line for keyword in ['广告', '版权', 'Copyright', '©', '分享到', '扫一扫', '二维码']):
+                    lines.append(line)
+        
+        text = '\n'.join(lines[:50])  # 最多取50行
+        
+        # 截断但保留完整性
+        if len(text) > 1500:
+            # 找到最后一个句号或换行进行截断
+            last_period = text[:1500].rfind('。')
+            last_newline = text[:1500].rfind('\n')
+            cutoff = max(last_period, last_newline, 1400)
+            text = text[:cutoff] + '...'
+        
+        return text if text else "无法提取网页正文内容"
+        
+    except requests.exceptions.Timeout:
+        logger.debug(f"获取网页内容超时: {url}")
+        return "请求超时"
+    except requests.exceptions.RequestException as e:
+        logger.debug(f"获取网页内容失败: {url}, 错误: {e}")
+        return f"网络请求失败: {str(e)}"
     except Exception as e:
-        logger.debug(f"Fetch content failed for {url}: {e}")
-
-    return ""
+        logger.debug(f"解析网页内容失败: {url}, 错误: {e}")
+        return f"解析失败: {str(e)}"
 
 
 @dataclass
