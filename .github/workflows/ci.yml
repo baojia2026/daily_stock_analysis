@@ -46,6 +46,10 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install flake8
+
+      - name: 创建目录结构
+        run: |
+          python setup_dirs.py
       
       - name: 🐍 语法检查
         run: |
