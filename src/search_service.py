@@ -53,6 +53,7 @@ def fetch_url_content(url: str, timeout: int = 5) -> str:
             element.decompose()
         
         # 移除注释
+        from bs4 import Comment
         for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
             comment.extract()
         
