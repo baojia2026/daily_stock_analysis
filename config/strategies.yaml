@@ -1,0 +1,119 @@
+# 理性投资决策系统 V3.0 配置
+rational_investment:
+  # 量化评分阈值
+  score_threshold: 7.5
+  # 评分权重配置
+  score_weights:
+    growth_quality: 0.3
+    financial_health: 0.25
+    governance_risk: 0.25
+    valuation: 0.2
+  # 生存性否决条件
+  survival_veto_conditions:
+    - 审计报告无法表示意见或否定意见
+    - 存在监管明确处罚的财务造假行为
+    - 发生涉及核心资产安全性的恶性事件
+    - 核心产品或服务面临技术颠覆或政策永久禁止
+
+# Growth-Valuation Map 配置
+growth_valuation_map:
+  # 增长指标配置
+  growth_metrics:
+    primary: forward_3y_cagr  # 未来3年净利润CAGR
+    fallback_1: past_3y_cagr  # 近3年净利润CAGR
+    fallback_2: revenue_cagr  # 收入CAGR
+  # 估值指标配置
+  valuation_metrics:
+    primary: forward_pe  # 前瞻市盈率
+    fallback: trailing_pe  # TTM市盈率
+  # 象限阈值
+  quadrants:
+    high_growth_threshold: 15.0  # 高增长阈值 (CAGR > 15%)
+    low_valuation_threshold: 20.0  # 低估阈值 (PE < 20)
+  # 目标象限
+  target_quadrant: "bottom_right"  # 右下象限（高增长+低估值）
+
+# 短线实战增强模块配置
+short_term_trading:
+  # 三层硬条件过滤器
+  hard_conditions:
+    # 第一层：趋势过滤器
+    trend_filter:
+      weekly_ma20_condition: "close_above_or_near_flat"
+      has_20_percent_rally_in_90_days: true
+    
+    # 第二层：情绪过滤器
+    sentiment_filter:
+      drawdown_threshold: 15.0  # 最大回撤≥15%
+      panic_signal:
+        volume_ratio: 1.5  # 量比>1.5
+        decline: 3.0  # 收盘跌幅>3%
+    
+    # 第三层：结构过滤器
+    structure_filter:
+      no_new_low_for_days: 2  # 连续2日不创新低
+      retracement_confirmation: true  # 回踩确认
+      above_ma5: true  # 站稳5日均线
+  
+  # 交易计划
+  trading_plan:
+    position_size: 0.02  # 单笔仓位2%
+    targets:
+      structure_target: 0.5  # 第一目标：0.5斐波那契回撤位
+      sentiment_target: 1.0  # 第二目标：前高附近
+  
+  # 软条件评估
+  soft_conditions:
+    - "in_target_quadrant"  # 位于增长-估值图目标象限
+    - "industry_outperforms"  # 行业强于大盘
+    - "bad_news_discussed"  # 利空已被充分讨论
+    - "key_support_level"  # 回踩关键技术位
+    - "macd_divergence"  # MACD底背离
+
+# 综合策略配置
+integrated_strategy:
+  # 策略执行顺序
+  execution_order:
+    - rational_investment  # 第一步：理性投资筛选
+    - growth_valuation_map  # 第二步：增长-估值筛选
+    - short_term_trading  # 第三步：短线时机筛选
+  
+  # 各阶段要求
+  requirements:
+    phase1_rational_investment:
+      must_pass: true
+      min_score: 7.5
+    
+    phase2_growth_valuation:
+      must_pass: true
+      target_quadrant: "bottom_right"
+      max_peg: 1.0
+    
+    phase3_short_term:
+      must_pass: true
+      hard_conditions_all: true
+      min_soft_conditions: 1
+  
+  # 信号优先级
+  signal_priority:
+    level_1: "rational_score_high_and_in_target_quadrant"  # 理性评分高且在目标象限
+    level_2: "in_target_quadrant_with_hard_conditions"  # 在目标象限且满足硬条件
+    level_3: "rational_score_high_only"  # 仅理性评分高
+  
+  # 仓位管理
+  position_management:
+    base_position: 0.02  # 基础仓位2%
+    position_multipliers:
+      level_1_signal: 1.5  # 一级信号：1.5倍仓位
+      level_2_signal: 1.0  # 二级信号：1倍仓位
+      level_3_signal: 0.5  # 三级信号：0.5倍仓位
+    
+  # 风险管理
+  risk_management:
+    max_single_position: 0.08  # 单只股票最大仓位8%
+    max_sector_exposure: 0.20  # 单个行业最大暴露20%
+    stop_loss: 0.10  # 止损线10%
+    take_profit:
+      level_1: 0.20  # 一级目标：20%
+      level_2: 0.15  # 二级目标：15%
+      level_3: 0.10  # 三级目标：10%
