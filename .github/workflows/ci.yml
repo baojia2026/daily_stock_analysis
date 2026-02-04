@@ -50,6 +50,14 @@ jobs:
       - name: 创建目录结构
         run: |
           python setup_dirs.py
+
+      - name: 缓存 pip 包
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+           ${{ runner.os }}-pip-
       
       - name: 🐍 语法检查
         run: |
